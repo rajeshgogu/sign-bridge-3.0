@@ -2,7 +2,6 @@
 
 import { useRef, useCallback, useEffect } from "react";
 import { usePhraseStore } from "@/stores/phrase-store";
-import type { HandLandmarker } from "@mediapipe/tasks-vision";
 import type { HandLandmark } from "@/types/ml";
 import { drawHandLandmarks } from "@/lib/ml/hand-landmark-utils";
 
@@ -15,11 +14,12 @@ export function usePhraseRecognition(
   const animationRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const isBusyRef = useRef<boolean>(false);
-  const isMountedRef = useRef<boolean>(true); // Mounting safety
+  const isMountedRef = useRef<boolean>(true);
 
   const { isDetecting, targetPhrase, setPrediction, clearPrediction } =
     usePhraseStore();
 
+  // Track mount/unmount
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -27,40 +27,57 @@ export function usePhraseRecognition(
     };
   }, []);
 
+  // Draw landmarks on canvas
   const drawResults = useCallback(
     (landmarks: HandLandmark[][], width: number, height: number) => {
       if (!isMountedRef.current) return;
+
       const canvas = canvasRef.current;
       if (!canvas) return;
+
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      
+
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
       }
+
       ctx.clearRect(0, 0, width, height);
 
       if (landmarks.length === 0) return;
 
       landmarks.forEach((l, idx) => {
-        drawHandLandmarks(ctx, l, width, height, idx === 0 ? "#00e1ff" : "#ffdd00");
+        drawHandLandmarks(
+          ctx,
+          l,
+          width,
+          height,
+          idx === 0 ? "#00e1ff" : "#ffdd00"
+        );
       });
     },
     [canvasRef]
   );
 
+  // Listen to worker messages
   useEffect(() => {
     if (!worker) return;
 
     const handleMessage = (e: MessageEvent) => {
       if (!isMountedRef.current) return;
+
       const { type, payload } = e.data;
+
       if (type === "RESULT") {
         const { landmarks, classification, sequenceBuffer } = payload;
-        
+
         if (videoRef.current) {
-          drawResults(landmarks || [], videoRef.current.videoWidth, videoRef.current.videoHeight);
+          drawResults(
+            landmarks || [],
+            videoRef.current.videoWidth,
+            videoRef.current.videoHeight
+          );
         }
 
         if (sequenceBuffer && setCurrentSequence) {
@@ -72,17 +89,34 @@ export function usePhraseRecognition(
         } else {
           clearPrediction();
         }
-        
+
         isBusyRef.current = false;
       }
     };
 
     worker.addEventListener("message", handleMessage);
-    return () => worker.removeEventListener("message", handleMessage);
-  }, [worker, setPrediction, clearPrediction, drawResults, videoRef, setCurrentSequence]);
 
+    return () => {
+      worker.removeEventListener("message", handleMessage);
+    };
+  }, [
+    worker,
+    drawResults,
+    videoRef,
+    setCurrentSequence,
+    setPrediction,
+    clearPrediction,
+  ]);
+
+  // Detection loop
   const detect = useCallback(async () => {
-    if (!worker || !videoRef.current || !isDetecting || isBusyRef.current || !isMountedRef.current) {
+    if (
+      !worker ||
+      !videoRef.current ||
+      !isDetecting ||
+      isBusyRef.current ||
+      !isMountedRef.current
+    ) {
       if (isMountedRef.current) {
         animationRef.current = requestAnimationFrame(detect);
       }
@@ -90,13 +124,13 @@ export function usePhraseRecognition(
     }
 
     const video = videoRef.current;
-    
-    // EXTREMELY STICKY READINESS CHECK
+
+    // Ensure video is ready
     if (
-      video.readyState < 2 || 
-      video.videoWidth === 0 || 
-      video.videoHeight === 0 || 
-      video.paused || 
+      video.readyState < 2 ||
+      video.videoWidth === 0 ||
+      video.videoHeight === 0 ||
+      video.paused ||
       video.ended
     ) {
       animationRef.current = requestAnimationFrame(detect);
@@ -104,26 +138,32 @@ export function usePhraseRecognition(
     }
 
     const now = performance.now();
+
+    // Limit FPS (~30fps)
     if (now - lastTimeRef.current < 33) {
       animationRef.current = requestAnimationFrame(detect);
       return;
     }
+
     lastTimeRef.current = now;
 
     try {
-      // Capture frame as bitmap. 
       const bitmap = await createImageBitmap(video);
-      
+
       if (isMountedRef.current && !isBusyRef.current) {
         isBusyRef.current = true;
-        worker.postMessage({
-          type: "DETECT",
-          payload: {
-            image: bitmap,
-            timestamp: now,
-            targetPhraseId: targetPhrase,
-          }
-        }, [bitmap]); 
+
+        worker.postMessage(
+          {
+            type: "DETECT",
+            payload: {
+              image: bitmap,
+              timestamp: now,
+              targetPhraseId: targetPhrase,
+            },
+          },
+          [bitmap]
+        );
       } else {
         bitmap.close();
       }
@@ -136,10 +176,12 @@ export function usePhraseRecognition(
     }
   }, [worker, videoRef, isDetecting, targetPhrase]);
 
+  // Start / stop detection loop
   useEffect(() => {
     if (isDetecting && worker) {
       animationRef.current = requestAnimationFrame(detect);
     }
+
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
@@ -147,5 +189,5 @@ export function usePhraseRecognition(
     };
   }, [isDetecting, worker, detect]);
 
-  return { detect, worker };
+  return { detect };
 }
