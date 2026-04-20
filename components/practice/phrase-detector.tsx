@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useCameraStore } from "@/stores/camera-store";
 import { usePhraseStore } from "@/stores/phrase-store";
 import { useMediapipe } from "@/hooks/use-mediapipe";
@@ -91,7 +91,7 @@ export function PhraseDetector() {
               </div>
             </div>
             <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-              <div 
+              <div
                 className={cn(
                   "h-full transition-all duration-500 ease-out",
                   confidence > 0.9 ? "bg-green-500 shadow-[0_0_10px_#22c55e]" : "bg-primary"
