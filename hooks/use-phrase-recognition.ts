@@ -7,50 +7,103 @@ import type { HandLandmark } from "@/types/ml";
 import { drawHandLandmarks } from "@/lib/ml/hand-landmark-utils";
 
 export function usePhraseRecognition(
-  landmarker: HandLandmarker | null,
+  worker: Worker | null,
   videoRef: React.RefObject<HTMLVideoElement | null>,
-  canvasRef: React.RefObject<HTMLCanvasElement | null>
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  setCurrentSequence?: (seq: number[][]) => void
 ) {
   const animationRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
-  const { isDetecting, targetPhrase, setPrediction, clearPrediction, setModelLoaded } =
+  const isBusyRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true); // Mounting safety
+
+  const { isDetecting, targetPhrase, setPrediction, clearPrediction } =
     usePhraseStore();
 
-  const drawAllHands = useCallback(
-    (multiLandmarks: HandLandmark[][], width: number, height: number) => {
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const drawResults = useCallback(
+    (landmarks: HandLandmark[][], width: number, height: number) => {
+      if (!isMountedRef.current) return;
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-
-      // Only resize/clear once per frame
+      
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
       }
       ctx.clearRect(0, 0, width, height);
 
-      if (multiLandmarks.length === 0) return;
+      if (landmarks.length === 0) return;
 
-      multiLandmarks.forEach((landmarks, idx) => {
-        const color = idx === 0 ? "#00e1ff" : "#ffdd00"; 
-        drawHandLandmarks(ctx, landmarks, width, height, color);
+      landmarks.forEach((l, idx) => {
+        drawHandLandmarks(ctx, l, width, height, idx === 0 ? "#00e1ff" : "#ffdd00");
       });
     },
     [canvasRef]
   );
 
+  useEffect(() => {
+    if (!worker) return;
+
+    const handleMessage = (e: MessageEvent) => {
+      if (!isMountedRef.current) return;
+      const { type, payload } = e.data;
+      if (type === "RESULT") {
+        const { landmarks, classification, sequenceBuffer } = payload;
+        
+        if (videoRef.current) {
+          drawResults(landmarks || [], videoRef.current.videoWidth, videoRef.current.videoHeight);
+        }
+
+        if (sequenceBuffer && setCurrentSequence) {
+          setCurrentSequence(sequenceBuffer);
+        }
+
+        if (classification && classification.confidence >= 0.85) {
+          setPrediction(classification.label, classification.confidence);
+        } else {
+          clearPrediction();
+        }
+        
+        isBusyRef.current = false;
+      }
+    };
+
+    worker.addEventListener("message", handleMessage);
+    return () => worker.removeEventListener("message", handleMessage);
+  }, [worker, setPrediction, clearPrediction, drawResults, videoRef, setCurrentSequence]);
+
   const detect = useCallback(async () => {
-    if (!landmarker || !videoRef.current || !isDetecting) return;
+    if (!worker || !videoRef.current || !isDetecting || isBusyRef.current || !isMountedRef.current) {
+      if (isMountedRef.current) {
+        animationRef.current = requestAnimationFrame(detect);
+      }
+      return;
+    }
 
     const video = videoRef.current;
-    if (video.readyState < 2) {
+    
+    // EXTREMELY STICKY READINESS CHECK
+    if (
+      video.readyState < 2 || 
+      video.videoWidth === 0 || 
+      video.videoHeight === 0 || 
+      video.paused || 
+      video.ended
+    ) {
       animationRef.current = requestAnimationFrame(detect);
       return;
     }
 
     const now = performance.now();
-    // Throttle to ~30fps
     if (now - lastTimeRef.current < 33) {
       animationRef.current = requestAnimationFrame(detect);
       return;
@@ -58,80 +111,41 @@ export function usePhraseRecognition(
     lastTimeRef.current = now;
 
     try {
-      const results = landmarker.detectForVideo(video, now);
-
-      if (results.landmarks && results.landmarks.length > 0) {
-        // Draw all detected hands at once
-        drawAllHands(results.landmarks, video.videoWidth, video.videoHeight);
-
-        // Try heuristic classifier passing ALL hands and the target phrase ID
-        const result = await getISLPhraseLabel(results.landmarks, targetPhrase);
-        if (result) {
-          setPrediction(result.label, result.confidence);
-        } else {
-          clearPrediction();
-        }
+      // Capture frame as bitmap. 
+      const bitmap = await createImageBitmap(video);
+      
+      if (isMountedRef.current && !isBusyRef.current) {
+        isBusyRef.current = true;
+        worker.postMessage({
+          type: "DETECT",
+          payload: {
+            image: bitmap,
+            timestamp: now,
+            targetPhraseId: targetPhrase,
+          }
+        }, [bitmap]); 
       } else {
-        // Clear canvas if no hands
-        drawAllHands([], 0, 0);
+        bitmap.close();
       }
-    } catch {
-      // Ignore detection errors
+    } catch (err) {
+      isBusyRef.current = false;
     }
 
-    animationRef.current = requestAnimationFrame(detect);
-  }, [
-    landmarker,
-    videoRef,
-    canvasRef,
-    isDetecting,
-    targetPhrase,
-    setPrediction,
-    clearPrediction,
-    drawAllHands,
-  ]);
-
-  useEffect(() => {
-    // Global suppression for MediaPipe's informational "errors" that trigger Next.js overlay
-    const originalConsoleError = console.error;
-    console.error = (...args: any[]) => {
-      const msg = args[0]?.toString() || "";
-      if (
-        msg.includes("Created TensorFlow Lite XNNPACK delegate") ||
-        msg.startsWith("INFO:") ||
-        msg.includes("Service \"kGpuService\"") // Handle any remaining GPU warnings
-      ) {
-        return;
-      }
-      originalConsoleError(...args);
-    };
-
-    if (isDetecting && landmarker) {
+    if (isMountedRef.current) {
       animationRef.current = requestAnimationFrame(detect);
     }
+  }, [worker, videoRef, isDetecting, targetPhrase]);
 
+  useEffect(() => {
+    if (isDetecting && worker) {
+      animationRef.current = requestAnimationFrame(detect);
+    }
     return () => {
-      console.error = originalConsoleError;
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isDetecting, landmarker, detect]);
+  }, [isDetecting, worker, detect]);
 
-  return { detect };
-}
-
-// ISL heuristic phrase classifier
-async function getISLPhraseLabel(
-  landmarks: HandLandmark[][],
-  targetPhraseId: string | null
-): Promise<{ label: string; confidence: number } | null> {
-  try {
-    const { classifyISLPhrase } = await import(
-      "@/lib/ml/isl-phrase-classifier"
-    );
-    return classifyISLPhrase(landmarks, targetPhraseId ?? undefined);
-  } catch {
-    return null;
-  }
+  return { detect, worker };
 }

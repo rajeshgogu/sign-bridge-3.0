@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 export function PhraseDetector() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [currentSequence, setCurrentSequence] = useState<number[][]>([]);
 
   const { stream, isActive, startCamera, stopCamera, toggleFacingMode } =
     useCameraStore();
@@ -24,7 +25,8 @@ export function PhraseDetector() {
   } = usePhraseStore();
   const { landmarker, loading: mpLoading, initialize: initMP } = useMediapipe();
 
-  usePhraseRecognition(landmarker, videoRef, canvasRef);
+  // Integrated recognition hook with sequence support
+  const { worker } = usePhraseRecognition(landmarker, videoRef, canvasRef, setCurrentSequence);
 
   // Attach stream to video element
   useEffect(() => {
@@ -33,13 +35,14 @@ export function PhraseDetector() {
     }
   }, [stream]);
 
-  // Initialize MediaPipe and start detection when camera is active
+  // Initialize MediaPipe when camera is active
   useEffect(() => {
     if (isActive && !landmarker && !mpLoading) {
       initMP();
     }
   }, [isActive, landmarker, mpLoading, initMP]);
 
+  // Start detection when ready
   useEffect(() => {
     if (isActive && landmarker) {
       startDetection();
@@ -47,11 +50,9 @@ export function PhraseDetector() {
     return () => stopDetection();
   }, [isActive, landmarker, startDetection, stopDetection]);
 
-  // Start camera on mount
+  // Handle lifetime
   useEffect(() => {
-    if (!isActive) {
-      startCamera();
-    }
+    if (!isActive) startCamera();
     return () => {
       stopCamera();
       stopDetection();
@@ -60,79 +61,76 @@ export function PhraseDetector() {
 
   return (
     <div className="space-y-4">
-      <div className="relative overflow-hidden rounded-lg bg-black shadow-lg ring-1 ring-white/10" style={{ height: "400px" }}>
+      <div className="relative overflow-hidden rounded-lg bg-black shadow-lg ring-1 ring-white/10" style={{ height: "480px" }}>
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className={cn(
-            "h-full w-full object-cover",
-            "scale-x-[-1]" // Mirror for user-facing camera
-          )}
+          className="h-full w-full object-cover scale-x-[-1]"
         />
         <canvas
           ref={canvasRef}
           className="absolute inset-0 h-full w-full scale-x-[-1]"
         />
 
-        {/* Loading overlay */}
-        {mpLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-2 text-white">
-              <Loader2 className="size-8 animate-spin" />
-              <span className="text-sm font-medium tracking-wide">Loading phrase tracking...</span>
-            </div>
-          </div>
-        )}
+        {/* Sequence Recorder UI */}
+        <div className="absolute left-4 top-4 z-20 w-72">
+          <SequenceRecorder currentSequence={currentSequence} />
+        </div>
 
-        {/* Prediction overlay */}
+        {/* Prediction Display Overlay */}
         {currentPrediction && (
-          <div className="absolute bottom-6 left-6 right-6 rounded-2xl bg-background/80 px-6 py-4 text-foreground shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] backdrop-blur-xl transition-all border border-white/20">
+          <div className="absolute bottom-6 left-6 right-6 rounded-2xl bg-background/80 px-6 py-4 backdrop-blur-xl border border-white/20 shadow-2xl">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-2xl font-black tracking-tight capitalize text-primary">
+              <div className="text-2xl font-black capitalize text-primary tracking-tight">
                 {currentPrediction.replace('_', ' ')}
               </div>
-              <div className="text-sm font-bold bg-primary/20 text-primary px-2 py-1 rounded-full">
-                {Math.round(confidence * 100)}% Match
+              <div className="text-xs font-black bg-primary/20 text-primary px-3 py-1 rounded-full uppercase tracking-tighter">
+                {Math.round(confidence * 100)}% Accuracy
               </div>
             </div>
-            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
               <div 
                 className={cn(
-                  "h-full transition-all duration-300",
-                  confidence > 0.9 ? "bg-green-500" : "bg-primary"
+                  "h-full transition-all duration-500 ease-out",
+                  confidence > 0.9 ? "bg-green-500 shadow-[0_0_10px_#22c55e]" : "bg-primary"
                 )}
                 style={{ width: `${confidence * 100}%` }}
               />
             </div>
-            <p className="text-[10px] text-muted-foreground mt-2 uppercase font-bold tracking-widest text-center">
-              Hold position for validation
-            </p>
           </div>
         )}
 
-        {/* Camera toggle button */}
-        <Button
-          variant="secondary"
-          size="icon"
-          className="absolute right-4 top-4 shadow-md bg-black/40 hover:bg-black/80 text-white border-0"
-          onClick={toggleFacingMode}
-          aria-label="Switch camera"
-        >
-          <RotateCcw className="size-4" />
-        </Button>
+        {/* Controls Overlay */}
+        <div className="absolute right-4 top-4 flex flex-col gap-2">
+          <Button
+            variant="secondary"
+            size="icon"
+            className="rounded-full bg-black/40 hover:bg-black/60 text-white border-0 backdrop-blur-md"
+            onClick={toggleFacingMode}
+          >
+            <RotateCcw className="size-4" />
+          </Button>
+        </div>
+
+        {/* Status Indicators */}
+        {mpLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <Loader2 className="size-10 animate-spin text-primary" />
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center justify-between text-sm text-muted-foreground px-1">
-        <span>
-          {isDetecting ? "Detecting phrases..." : "Camera initializing..."}
-        </span>
-        {currentPrediction && (
-          <span className="font-medium text-primary capitalize bg-primary/10 px-2 py-0.5 rounded-md">
-            Detected: {currentPrediction.replace('_', ' ')}
-          </span>
-        )}
+      <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-widest text-muted-foreground px-2">
+        <div className="flex items-center gap-2">
+          <div className={cn("size-2 rounded-full", isDetecting ? "bg-green-500 animate-pulse" : "bg-red-500")} />
+          {isDetecting ? "System Online" : "System Offline"}
+        </div>
+        <div className="flex gap-4">
+          <span>60 FPS Tracking</span>
+          <span>Dual-Hand Active</span>
+        </div>
       </div>
     </div>
   );

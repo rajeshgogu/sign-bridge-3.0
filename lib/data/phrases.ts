@@ -41,7 +41,7 @@ export const PHRASES: PhraseData[] = [
     label: "I am hungry",
     category: "🏠 Basic Needs & Daily Life",
     description: "Express hunger.",
-    imageUrl: "/signs/phrases/how_are_you.png", // Reusing wide C for now
+    imageUrl: "/signs/phrases/hungry.png",
     instructions: "Form a wide 'C' shape with one hand and move it down your chest from throat to stomach.",
   },
   {
@@ -229,7 +229,7 @@ export const PHRASES: PhraseData[] = [
     label: "Please speak slowly",
     category: "📞 Communication",
     description: "Asking for slower speech.",
-    imageUrl: "/signs/phrases/rest.png", // Placeholder
+    imageUrl: "/signs/phrases/speak_slowly.png",
     instructions: "Place one flat hand over the other and move them slowly apart horizontally.",
   },
   {

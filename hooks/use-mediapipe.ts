@@ -14,13 +14,25 @@ export function useMediapipe() {
     setError(null);
 
     try {
-      const { initializeHandLandmarker } = await import("@/lib/ml/mediapipe");
-      const instance = await initializeHandLandmarker();
-      setLandmarker(instance);
+      const worker = new Worker(
+        new URL("../lib/ml/detection.worker.ts", import.meta.url)
+      );
+      
+      worker.onmessage = (e) => {
+        if (e.data.type === "INIT_DONE") {
+          setLoading(false);
+        }
+        if (e.data.type === "ERROR") {
+          setError(e.data.payload);
+          setLoading(false);
+        }
+      };
+
+      worker.postMessage({ type: "INIT" });
+      setLandmarker(worker as any); // Cast worker as the "instance"
     } catch (err) {
-      setError("Failed to initialize hand tracking");
+      setError("Failed to initialize detection worker");
       console.error(err);
-    } finally {
       setLoading(false);
     }
   }, [landmarker, loading]);

@@ -127,17 +127,17 @@ function extractFeatures(lm: HandLandmark[]): HandFeatures | null {
 
 /** Finger clearly straight (not just partially extended) */
 function isExtended(curl: number, pip: number): boolean {
-  return curl < 0.18 && pip > 155;
+  return curl < 0.22 && pip > 145;
 }
 
 /** Finger clearly bent/curled */
 function isCurled(curl: number, pip: number): boolean {
-  return curl > 0.38 || pip < 125;
+  return curl > 0.35 || pip < 135;
 }
 
 /** Finger halfway — hooked or bent (C-shape) */
 function isBent(curl: number, pip: number): boolean {
-  return curl >= 0.18 && curl <= 0.50 && pip >= 110 && pip <= 160;
+  return curl >= 0.18 && curl <= 0.52 && pip >= 105 && pip <= 165;
 }
 
 // Thumb helpers
@@ -178,56 +178,41 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
   // GREETINGS
   // ─────────────────────────────────────────────────────────────────────────
 
-  /**
-   * hello — open 5-finger palm WAVING (all spread):
-   * All 5 fingers extended, thumb out, all spread apart
-   * Distinct: allSpread=true + all fingers extended + thumb extended
-   */
   hello: {
-    minScore: 0.82,
+    minScore: 0.82,      // Increased to separate from generic open palm
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
         isExtended(f.indexCurl, f.indexPIP),
         isExtended(f.middleCurl, f.middlePIP),
-        isExtended(f.ringCurl, 160),
-        isExtended(f.pinkyCurl, 160),
+        isExtended(f.ringCurl, 150),
+        isExtended(f.pinkyCurl, 150),
         isThumbExtended(f),
-        f.allSpread,                         // ← spread is the unique key
+        f.allSpread,            // Hello MUST be spread
         f.indexMiddleDist > 0.40,
       ]);
     },
   },
 
-  /**
-   * thank_you — flat palm pushed FORWARD (fingers together, no spread):
-   * ALL 5 fingers extended BUT together (indexMiddleSpread < 0.30)
-   * Thumb not necessarily out (tucked or neutral)
-   * Distinct from hello: fingers must be TOGETHER not spread
-   */
   thank_you: {
-    minScore: 0.80,
+    minScore: 0.88,      // High threshold for flat-palm forward
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
         isExtended(f.indexCurl, f.indexPIP),
         isExtended(f.middleCurl, f.middlePIP),
-        isExtended(f.ringCurl, 160),
-        isExtended(f.pinkyCurl, 160),
-        f.indexMiddleDist < 0.30,          // fingers TOGETHER ← key differentiator
-        f.middleRingDist < 0.30,
-        !f.allSpread,
+        isExtended(f.ringCurl, 150),
+        isExtended(f.pinkyCurl, 150),
+        f.indexMiddleDist < 0.18,          // Fingers MUST be touching
+        f.middleRingDist < 0.18,
+        !f.allSpread,                      // NO spread
       ]);
     },
   },
 
-  /**
-   * how_are_you — two C-hands rolling outward:
-   * BOTH hands show C-shape (bent fingers, thumb out, NOT fully curled or extended)
-   */
-  how_are_you: {
+  how_are_you_greet: {   // Renamed from how_are_you
     minScore: 0.72,
     twoHanded: true,
     score: ([f0, f1]) => {
@@ -245,12 +230,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * goodbye — wave open palm (same shape as hello but single hand, fingers together)
-   * Unique: Extended index+middle+ring+pinky, thumb slightly out, fingers NOT spread (unlike hello)
-   * key: indexMiddleDist medium (0.25–0.38)
-   */
-  goodbye: {
+  goodbye_greet: {       // Renamed from goodbye
     minScore: 0.80,
     twoHanded: false,
     score: ([f]) => {
@@ -260,19 +240,15 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isExtended(f.middleCurl, f.middlePIP),
         isExtended(f.ringCurl, 155),
         isExtended(f.pinkyCurl, 155),
-        f.indexMiddleDist >= 0.22 && f.indexMiddleDist <= 0.38, // partial spread — distinct from hello
+        f.indexMiddleDist >= 0.22 && f.indexMiddleDist <= 0.38,
         isThumbExtended(f),
         !f.allSpread,
       ]);
     },
   },
 
-  /**
-   * my_name_is — point to self then tap fingers:
-   * Index pointing (extended), rest curled, thumb neutral
-   */
-  my_name_is: {
-    minScore: 0.78,
+  name_is: {            // Renamed from my_name_is
+    minScore: 0.74,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
@@ -281,18 +257,14 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        isThumbCurled(f),
-        f.indexMiddleDist > 0.30,
+        f.thumbAbduction < 0.60,
+        f.indexMiddleDist > 0.28,
       ]);
     },
   },
 
-  /**
-   * nice_to_meet_you — two flat palms sliding across each other:
-   * BOTH hands: all fingers extended, together (not spread)
-   */
-  nice_to_meet_you: {
-    minScore: 0.72,
+  meet_you: {           // Renamed from nice_to_meet_you
+    minScore: 0.68,
     twoHanded: true,
     score: ([f0, f1]) => {
       if (!f0 || !f1) return 0;
@@ -300,9 +272,9 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         return singleHandScore(f, [
           isExtended(f.indexCurl, f.indexPIP),
           isExtended(f.middleCurl, f.middlePIP),
-          isExtended(f.ringCurl, 155),
-          isExtended(f.pinkyCurl, 155),
-          f.indexMiddleDist < 0.32,
+          isExtended(f.ringCurl, 145),
+          isExtended(f.pinkyCurl, 145),
+          f.indexMiddleDist < 0.35,
           !f.allSpread,
         ]);
       }
@@ -310,11 +282,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * i_am_fine — thumbs up (hand 1 only):
-   * Thumb extended + out, all other fingers curled
-   */
-  i_am_fine: {
+  im_fine: {            // Renamed from i_am_fine
     minScore: 0.80,
     twoHanded: false,
     score: ([f]) => {
@@ -330,11 +298,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * welcome — palm out, flat, moving toward viewer:
-   * Flat palm facing out — fingers extended, TOGETHER, thumb out
-   * Distinct from thank_you: thumb must be visibly extended outward
-   */
   welcome: {
     minScore: 0.80,
     twoHanded: false,
@@ -346,7 +309,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isExtended(f.ringCurl, 155),
         isExtended(f.pinkyCurl, 155),
         isThumbExtended(f),
-        f.thumbAbduction > 0.60,           // ← thumb clearly out, unlike thank_you
+        f.thumbAbduction > 0.60,
         f.indexMiddleDist < 0.32,
       ]);
     },
@@ -356,12 +319,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
   // BASIC NEEDS
   // ─────────────────────────────────────────────────────────────────────────
 
-  /**
-   * help — thumbs-up on flat palm (typical ISL help):
-   * One hand: thumb extended, other 4 curled into fist
-   * Distinct from i_am_fine: requires TWO hands but uses same shape for dominant
-   */
-  help: {
+  help_me: {           // Renamed from help
     minScore: 0.78,
     twoHanded: false,
     score: ([f]) => {
@@ -373,16 +331,12 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbIndexDist > 0.55,           // thumb clearly away from fist
+        f.thumbIndexDist > 0.55,
       ]);
     },
   },
 
-  /**
-   * yes — fist nodding (S-shape fist):
-   * ALL fingers curled, thumb across (not tucked, not out)
-   */
-  yes: {
+  yes_simple: {         // Renamed from yes
     minScore: 0.78,
     twoHanded: false,
     score: ([f]) => {
@@ -392,16 +346,12 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbCrossesPalm,               // thumb across fingers = fist
+        f.thumbCrossesPalm,
         !isThumbExtended(f),
       ]);
     },
   },
 
-  /**
-   * water — W handshape tapping chin:
-   * Index + middle + ring extended, pinky curled, thumb curled
-   */
   water: {
     minScore: 0.78,
     twoHanded: false,
@@ -419,11 +369,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * need_food — fingertips to mouth (bunched fingertips = O-shape):
-   * All fingertips touching thumb — pinched/O shape
-   */
-  need_food: {
+  food: {               // Renamed from need_food
     minScore: 0.75,
     twoHanded: false,
     score: ([f]) => {
@@ -440,15 +386,8 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-
-
-  /**
-   * need_rest — crossed arms over chest:
-   * TWO hands, both flat/open (all extended), positioned crossing
-   * Detect: both hands all-extended, close together (indexMiddleDist similar for both)
-   */
-  need_rest: {
-    minScore: 0.72,
+  rest: {               // Renamed from need_rest
+    minScore: 0.68,
     twoHanded: true,
     score: ([f0, f1]) => {
       if (!f0 || !f1) return 0;
@@ -456,21 +395,15 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         return singleHandScore(f, [
           isExtended(f.indexCurl, f.indexPIP),
           isExtended(f.middleCurl, f.middlePIP),
-          isExtended(f.ringCurl, 155),
-          isExtended(f.pinkyCurl, 155),
-          f.indexMiddleDist < 0.35,
+          isExtended(f.ringCurl, 145),
+          isExtended(f.pinkyCurl, 145),
+          f.indexMiddleDist < 0.38,
         ]);
       }
       return (restShape(f0) + restShape(f1)) / 2;
     },
   },
 
-
-
-  /**
-   * cold — shivering fists (TWO hands, both fists):
-   * BOTH hands: all fingers curled into fist, thumbs curled
-   */
   cold: {
     minScore: 0.72,
     twoHanded: true,
@@ -488,10 +421,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * tired — both hands droop down from chest:
-   * TWO hands, both flat (all extended), fingers together, palms inward
-   */
   tired: {
     minScore: 0.72,
     twoHanded: true,
@@ -515,32 +444,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
   // COMMUNICATION
   // ─────────────────────────────────────────────────────────────────────────
 
-  /**
-   * call_me — ILY / shaka (thumb + pinky out, rest curled):
-   * Thumb + pinky extended, index + middle + ring curled
-   */
   call_me: {
-    minScore: 0.78,
-    twoHanded: false,
-    score: ([f]) => {
-      if (!f) return 0;
-      return singleHandScore(f, [
-        isThumbExtended(f),
-        isCurled(f.indexCurl, f.indexPIP),
-        isCurled(f.middleCurl, f.middlePIP),
-        isCurled(f.ringCurl, 100),
-        isExtended(f.pinkyCurl, 155),     // pinky up ← key
-        f.thumbAbduction > 0.55,
-      ]);
-    },
-  },
-
-  /**
-   * call_doctor — phone-hand, then pulse check:
-   * Thumb + pinky out (ILY/phone shape)
-   * Same as call_me for static detection — differentiated by context (targetPhrase)
-   */
-  call_doctor: {
     minScore: 0.78,
     twoHanded: false,
     score: ([f]) => {
@@ -552,22 +456,34 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.ringCurl, 100),
         isExtended(f.pinkyCurl, 155),
         f.thumbAbduction > 0.55,
-        f.ringPinkyDist > 0.30,           // pinky separate from ring
       ]);
     },
   },
 
-  /**
-   * call_family — F-shape (thumb + index touching, others out):
-   * Thumb and index form circle, middle + ring + pinky extended
-   */
+  call_doctor_request: {
+    minScore: 0.78,
+    twoHanded: false,
+    score: ([f]) => {
+      if (!f) return 0;
+      return singleHandScore(f, [
+        isThumbExtended(f),
+        isCurled(f.indexCurl, f.indexPIP),
+        isCurled(f.middleCurl, f.middlePIP),
+        isCurled(f.ringCurl, 100),
+        isExtended(f.pinkyCurl, 155),
+        f.thumbAbduction > 0.55,
+        f.ringPinkyDist > 0.30,
+      ]);
+    },
+  },
+
   call_family: {
     minScore: 0.75,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
-        isThumbPinching(f),               // thumb + index circle
+        isThumbPinching(f),
         f.thumbIndexDist < 0.35,
         isBent(f.indexCurl, f.indexPIP) || isCurled(f.indexCurl, f.indexPIP),
         isExtended(f.middleCurl, f.middlePIP),
@@ -577,12 +493,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * cannot_hear — point to ear (index pointing sideways):
-   * Index extended + pointing, rest curled, thumb curled
-   * Similar to thirsty but thumb must be curled more tightly
-   */
-  cannot_hear: {
+  no_hear: {
     minScore: 0.78,
     twoHanded: false,
     score: ([f]) => {
@@ -592,18 +503,14 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbCurl > 0.40,               // thumb tucked tighter than thirsty
+        f.thumbCurl > 0.40,
         f.thumbIndexDist < 0.40,
         f.indexMiddleDist > 0.35,
       ]);
     },
   },
 
-  /**
-   * repeat_that — beckoning (B-shape, fingers close together, folded):
-   * All 4 fingers extended + together, thumb tucked
-   */
-  repeat_that: {
+  repeat_please: {
     minScore: 0.76,
     twoHanded: false,
     score: ([f]) => {
@@ -613,18 +520,13 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isExtended(f.middleCurl, f.middlePIP),
         isExtended(f.ringCurl, 150),
         isExtended(f.pinkyCurl, 150),
-        f.indexMiddleDist < 0.25,        // fingers close together
+        f.indexMiddleDist < 0.25,
         f.middleRingDist < 0.25,
-        f.thumbCurl > 0.25,              // thumb slightly tucked
+        f.thumbCurl > 0.25,
       ]);
     },
   },
 
-  /**
-   * speak_slowly — slide hand up arm (flat hand, palm down, moving):
-   * Flat hand, all extended, fingers together, similar to repeat_that
-   * Distinct: thumb is slightly bent/neutral (not extended, not tucked)
-   */
   speak_slowly: {
     minScore: 0.76,
     twoHanded: false,
@@ -636,45 +538,36 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isExtended(f.ringCurl, 150),
         isExtended(f.pinkyCurl, 150),
         f.indexMiddleDist < 0.28,
-        f.thumbCurl > 0.20 && f.thumbCurl < 0.45, // neutral thumb — not extended, not curled
+        f.thumbCurl > 0.20 && f.thumbCurl < 0.45,
         !f.allSpread,
       ]);
     },
   },
 
-  /**
-   * understand — flick index from fist near forehead:
-   * Index extended with slight curl (flicking position), rest curled, thumb tucked
-   */
   understand: {
     minScore: 0.76,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
-        f.indexCurl < 0.25 && f.indexPIP > 140,  // index mostly straight
+        f.indexCurl < 0.25 && f.indexPIP > 140,
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
         !f.thumbCrossesPalm,
-        f.thumbCurl > 0.30,               // thumb tucked/neutral
+        f.thumbCurl > 0.30,
         f.indexMiddleDist > 0.28,
       ]);
     },
   },
 
-  /**
-   * not_understand — same flick but with head shake (static = same shape):
-   * Same as understand shape — only context (targetPhrase) differentiates
-   * Slight difference: all digits more curled / tighter
-   */
-  not_understand: {
+  no_understand: {
     minScore: 0.76,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
-        f.indexCurl < 0.30,               // index slightly more curled than understand
+        f.indexCurl < 0.30,
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
@@ -684,11 +577,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * write_it_down — mime writing (flat palm base + pointer writing):
-   * Index + middle extended (writing position), ring + pinky curled
-   */
-  write_it_down: {
+  write_down: {
     minScore: 0.76,
     twoHanded: false,
     score: ([f]) => {
@@ -698,18 +587,14 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isExtended(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        isThumbPinching(f),               // thumb near index (holding pen position)
+        isThumbPinching(f),
         f.thumbIndexDist < 0.38,
         f.indexMiddleDist < 0.30,
       ]);
     },
   },
 
-  /**
-   * help_communicate — help sign (same as help):
-   * Thumb out, fist — uses context differentiation via targetPhrase
-   */
-  help_communicate: {
+  help_comm: {
     minScore: 0.78,
     twoHanded: false,
     score: ([f]) => {
@@ -730,10 +615,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
   // EMERGENCY
   // ─────────────────────────────────────────────────────────────────────────
 
-  /**
-   * need_doctor — pulse-check (two fingers on wrist):
-   * Index + middle extended together (H/U shape), rest curled, thumb tucked
-   */
   need_doctor: {
     minScore: 0.78,
     twoHanded: false,
@@ -744,17 +625,12 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isExtended(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.indexMiddleDist < 0.25,         // index + middle TOGETHER ← U-shape
+        f.indexMiddleDist < 0.25,
         f.thumbCurl > 0.25,
       ]);
     },
   },
 
-  /**
-   * in_pain — both index fingers pointing toward each other, twisting:
-   * Index extended, rest curled (pointing), thumb curled
-   * Single: index pointing up, tight fist
-   */
   in_pain: {
     minScore: 0.78,
     twoHanded: false,
@@ -765,18 +641,13 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbCurl > 0.40,                // thumb clearly tucked
+        f.thumbCurl > 0.40,
         f.indexMiddleDist > 0.32,
       ]);
     },
   },
 
-  /**
-   * ambulance — rotating fist like siren light:
-   * Loose fist with thumb out to side (rotating)
-   * Distinct: thumb extended outward + fist (= A-shape rotated)
-   */
-  ambulance: {
+  ambulance_call: {
     minScore: 0.78,
     twoHanded: false,
     score: ([f]) => {
@@ -788,17 +659,12 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbCurl < 0.30,               // thumb clearly out (A-thumbs-up shape)
+        f.thumbCurl < 0.30,
       ]);
     },
   },
 
-  /**
-   * fever — back of hand to forehead (flat hand):
-   * All fingers extended, held flat (not spread), thumb tucked/natural
-   * Distinct from thank_you: thumb should be bent/curled
-   */
-  fever: {
+  i_have_fever: {
     minScore: 0.80,
     twoHanded: false,
     score: ([f]) => {
@@ -808,19 +674,14 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isExtended(f.middleCurl, f.middlePIP),
         isExtended(f.ringCurl, 155),
         isExtended(f.pinkyCurl, 155),
-        f.thumbCurl > 0.30,               // thumb curled ← distinct from welcome/thank_you
+        f.thumbCurl > 0.30,
         !isThumbExtended(f),
         f.indexMiddleDist < 0.30,
       ]);
     },
   },
 
-  /**
-   * dizzy — circular motion around head (index pointing laterally):
-   * Index extended, rest curled, thumb curled — similar to in_pain
-   * Distinct: slightly looser fist, index more lateral
-   */
-  dizzy: {
+  feel_dizzy: {
     minScore: 0.75,
     twoHanded: false,
     score: ([f]) => {
@@ -830,17 +691,13 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbCurl > 0.30 && f.thumbCurl < 0.55,  // slightly open thumb (not tight fist)
+        f.thumbCurl > 0.30 && f.thumbCurl < 0.55,
         f.thumbIndexDist > 0.35,
       ]);
     },
   },
 
-  /**
-   * wheelchair — miming pushing wheels (two fists rotating outward):
-   * TWO hand fists rotating — both fists
-   */
-  wheelchair: {
+  need_wheelchair: {
     minScore: 0.70,
     twoHanded: true,
     score: ([f0, f1]) => {
@@ -858,12 +715,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * deaf — touch ear then mouth (point to ear = index pointing):
-   * Index extended toward side, thumb curled in, rest curled
-   * Very similar to cannot_hear — differentiated by targetPhrase only
-   */
-  deaf: {
+  i_am_deaf: {
     minScore: 0.78,
     twoHanded: false,
     score: ([f]) => {
@@ -873,17 +725,13 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbCurl > 0.42,               // tight thumb
+        f.thumbCurl > 0.42,
         f.indexMiddleDist > 0.38,
       ]);
     },
   },
 
-  /**
-   * use_sign — two hands rotating around each other (TWO circular fists):
-   * TWO hands, both loose fists, rotating
-   */
-  use_sign: {
+  use_isl: {
     minScore: 0.70,
     twoHanded: true,
     score: ([f0, f1]) => {
@@ -899,10 +747,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * be_patient — thumb on chin, sliding down:
-   * Thumb extended pointing up, others loosely curled/fist
-   */
   be_patient: {
     minScore: 0.76,
     twoHanded: false,
@@ -914,17 +758,13 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.indexCurl, f.indexPIP),
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
-        f.pinkyCurl > 0.20,              // pinky slightly curled (not fully)
+        f.pinkyCurl > 0.20,
         f.thumbCurl < 0.28,
       ]);
     },
   },
 
-  /**
-   * emergency — E-shape (all curled under thumb) shaken rapidly:
-   * All fingers bent/curled, thumb resting across (different from yes/S-fist: less tight)
-   */
-  emergency: {
+  emergency_urgent: {
     minScore: 0.76,
     twoHanded: false,
     score: ([f]) => {
@@ -945,11 +785,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
   // SCHOOL & SOCIAL
   // ─────────────────────────────────────────────────────────────────────────
 
-  /**
-   * going_school — clap (two flat hands together):
-   * TWO hands: both flat with all extended fingers, coming together
-   */
-  going_school: {
+  go_school: {
     minScore: 0.72,
     twoHanded: true,
     score: ([f0, f1]) => {
@@ -967,38 +803,29 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * more_time — tap wrist (index pointing down + wrist tap):
-   * Closed fist with index pointing (curled like gun, pointing down)
-   * index bent + rest curled, thumb out
-   */
   more_time: {
     minScore: 0.76,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
-        isBent(f.indexCurl, f.indexPIP),  // index bent (not fully extended)
+        isBent(f.indexCurl, f.indexPIP),
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        isThumbExtended(f),               // thumb out (L-like shape but index bent)
+        isThumbExtended(f),
         f.thumbAbduction > 0.50,
       ]);
     },
   },
 
-  /**
-   * question — draw question mark in air (index pointing, hooking):
-   * Index hooked/bent, rest curled, thumb curled
-   */
   question: {
     minScore: 0.75,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
-        isBent(f.indexCurl, f.indexPIP),   // index BENT (hooked) ← key
+        isBent(f.indexCurl, f.indexPIP),
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
@@ -1008,10 +835,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * agree — index fingers parallel (touch forehead + bring together):
-   * Index extended, rest curled, thumb slightly out
-   */
   agree: {
     minScore: 0.76,
     twoHanded: false,
@@ -1022,17 +845,13 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isCurled(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbCurl > 0.20 && f.thumbCurl < 0.50,  // neutral thumb
+        f.thumbCurl > 0.20 && f.thumbCurl < 0.50,
         f.thumbAbduction > 0.35 && f.thumbAbduction < 0.60,
         f.indexMiddleDist > 0.28,
       ]);
     },
   },
 
-  /**
-   * disagree — index fingers moving apart:
-   * Two index fingers extended apart — two hands
-   */
   disagree: {
     minScore: 0.72,
     twoHanded: true,
@@ -1050,11 +869,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * no — tap index + middle against thumb (snapping N):
-   * Index + middle extended and close together, tapping thumb
-   * Distinct: thumbIndexDist < 0.30 (pinching toward index/middle)
-   */
   no: {
     minScore: 0.78,
     twoHanded: false,
@@ -1065,46 +879,18 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
         isExtended(f.middleCurl, f.middlePIP),
         isCurled(f.ringCurl, 100),
         isCurled(f.pinkyCurl, 100),
-        f.thumbIndexDist < 0.32,          // thumb near index/middle ← pinch snapping
+        f.thumbIndexDist < 0.32,
         f.indexMiddleDist < 0.25,
       ]);
     },
   },
 
-  /**
-   * how_are_you_greet — same as hungry (curved C-shape):
-   * HAND: wide C shape, fingers curved, thumb extended.
-   */
-  how_are_you_greet: {
-    minScore: 0.75,
-    twoHanded: false,
-    score: ([f]) => {
-      if (!f) return 0;
-      return singleHandScore(f, [
-        isBent(f.indexCurl, f.indexPIP),
-        isBent(f.middleCurl, f.middlePIP),
-        isBent(f.ringCurl, 140),
-        isBent(f.pinkyCurl, 140),
-        f.thumbAbduction > 0.45,
-        !isCurled(f.indexCurl, f.indexPIP),
-      ]);
-    },
-  },
-
-  /**
-   * hungry — same gesture as how_are_you_greet in ISL context:
-   * (Used in Basic Needs category)
-   */
   hungry: {
     minScore: 0.75,
     twoHanded: false,
     score: ([f]) => PHRASE_SIGNATURES["how_are_you_greet"].score([f]),
   },
 
-  /**
-   * what_doing — both hands pinching/shaking (TWO hands pinch):
-   * TWO hands: both with index + thumb pinching (O/pinch shape), shaking
-   */
   what_doing: {
     minScore: 0.72,
     twoHanded: true,
@@ -1121,10 +907,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * not_sure — two flat hands alternating up/down like scale:
-   * TWO hands: both flat (all extended), spread fingers
-   */
   not_sure: {
     minScore: 0.70,
     twoHanded: true,
@@ -1143,128 +925,70 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * good_morning — arm-sweep (flat hand, moving across):
-   * Flat hand, all extended, thumb alongside fingers (natural)
-   * Distinct from welcome: thumb slightly neutral, arm position
-   */
   good_morning: {
-    minScore: 0.80,
+    minScore: 0.75,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
         isExtended(f.indexCurl, f.indexPIP),
         isExtended(f.middleCurl, f.middlePIP),
-        isExtended(f.ringCurl, 155),
-        isExtended(f.pinkyCurl, 155),
-        f.thumbCurl > 0.15 && f.thumbCurl < 0.40,   // thumb neutral alongside
-        f.thumbAbduction < 0.55,         // thumb held with hand (not jutting out)
-        f.indexMiddleDist < 0.28,
+        isExtended(f.ringCurl, 145),
+        isExtended(f.pinkyCurl, 145),
+        f.thumbCurl < 0.45,
+        f.thumbAbduction < 0.60,
+        f.indexMiddleDist < 0.32,
       ]);
     },
   },
 
-  /**
-   * good_night_greet — hands droop/set (bent hand dropping):
-   * All fingers bent (half-curl / C-like), thumb inside
-   */
   good_night_greet: {
-    minScore: 0.75,
+    minScore: 0.70,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
         isBent(f.indexCurl, f.indexPIP),
         isBent(f.middleCurl, f.middlePIP),
-        isBent(f.ringCurl, 140),
-        isBent(f.pinkyCurl, 140),
-        f.thumbCurl > 0.25,
-        !isThumbExtended(f),
+        isBent(f.ringCurl, 135),
+        isBent(f.pinkyCurl, 135),
+        f.thumbCurl > 0.20,
+        f.thumbAbduction < 0.55,
       ]);
     },
   },
 
-  // ── NEW PHRASES ──────────────────────────────────────────────────────────
-
-  /**
-   * food — bunched fingers to mouth:
-   * HAND: fingertips (index/middle/ring/pinky) all touching thumb.
-   */
-  food: {
-    minScore: 0.88,
-    twoHanded: false,
-    score: ([f]) => {
-      if (!f) return 0;
-      return singleHandScore(f, [
-        f.thumbIndexDist < 0.25,
-        f.thumbMiddleDist < 0.25,
-        f.thumbRingDist < 0.30,
-        isCurled(f.middleCurl, f.middlePIP),
-        isCurled(f.ringCurl, 100),
-      ]);
-    },
-  },
-
-  /**
-   * medicine — middle finger twist on palm:
-   * Middle finger bent down toward palm, others neutral/extended.
-   */
   medicine: {
-    minScore: 0.82,
+    minScore: 0.74,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
         isBent(f.middleCurl, f.middlePIP),
         isExtended(f.indexCurl, f.indexPIP),
-        isExtended(f.pinkyCurl, 150),
-        f.thumbCurl > 0.30,
+        isExtended(f.pinkyCurl, 145),
+        f.thumbCurl > 0.25,
+        f.middleRingDist > 0.15,
       ]);
     },
   },
 
-  /**
-   * toilet — T-shape shaking:
-   * Thumb between index and middle, shaking.
-   */
   toilet: {
-    minScore: 0.85,
+    minScore: 0.74,
     twoHanded: false,
     score: ([f]) => {
       if (!f) return 0;
       return singleHandScore(f, [
         isCurled(f.indexCurl, f.indexPIP),
         isCurled(f.middleCurl, f.middlePIP),
-        f.thumbCurl > 0.40,
-        f.thumbIndexDist < 0.35,
+        f.thumbCurl > 0.35,
+        f.thumbIndexDist < 0.40,
+        isCurled(f.ringCurl, 120),
       ]);
     },
   },
 
-  /**
-   * help_me — thumb-on-palm lift:
-   * Same as old help signature.
-   */
-  help_me: {
-    minScore: 0.85,
-    twoHanded: false,
-    score: ([f]) => {
-      if (!f) return 0;
-      return singleHandScore(f, [
-        isThumbExtended(f),
-        isCurled(f.indexCurl, f.indexPIP),
-        isCurled(f.middleCurl, f.middlePIP),
-        isCurled(f.ringCurl, 100),
-      ]);
-    },
-  },
-
-  /**
-   * yes_simple — nodding fist:
-   * Fist (all curled) shaking up and down.
-   */
-  yes_simple: {
+  yes_simple_alt: {
     minScore: 0.88,
     twoHanded: false,
     score: ([f]) => {
@@ -1279,10 +1003,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * no_simple — finger snap:
-   * Index and middle meet thumb then snap open.
-   */
   no_simple: {
     minScore: 0.85,
     twoHanded: false,
@@ -1297,11 +1017,7 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * emergency_urgent — shake fist:
-   * Tight fist shaking rapidly.
-   */
-  emergency_urgent: {
+  emergency_urgent_alt: {
     minScore: 0.90,
     twoHanded: false,
     score: ([f]) => {
@@ -1316,10 +1032,6 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
     },
   },
 
-  /**
-   * thirsty — index down throat:
-   * Index finger extended, others curled.
-   */
   thirsty: {
     minScore: 0.85,
     twoHanded: false,
@@ -1337,16 +1049,14 @@ const PHRASE_SIGNATURES: Record<string, PhraseSignature> = {
 
 // ── Temporal Smoothing Buffer ─────────────────────────────────────────────────
 
-const BUFFER_SIZE = 5;
-const MIN_CONSISTENT = 3; // frames in a row needed before firing
+const BUFFER_SIZE = 8;     // Increased for better stabilization
+const MIN_CONSISTENT = 5; // Require more frames for high confidence signs
 let phraseBuffer: string[] = [];
 
-function addToBuffer(label: string): void {
+function addToBuffer(label: string): string | null {
   phraseBuffer.push(label);
   if (phraseBuffer.length > BUFFER_SIZE) phraseBuffer.shift();
-}
-
-function getStableLabel(): string | null {
+  
   if (phraseBuffer.length < MIN_CONSISTENT) return null;
   const recent = phraseBuffer.slice(-MIN_CONSISTENT);
   if (recent.every((l) => l === recent[0])) return recent[0];
@@ -1374,24 +1084,22 @@ export function classifyISLPhrase(
   const handsAvailable = handFeatures.length;
 
   // ── Mode 1: Target phrase (practice mode) ─────────────────────────────────
-  // Only score the target phrase — reduces false positives drastically
   if (targetPhraseId && PHRASE_SIGNATURES[targetPhraseId]) {
     const sig = PHRASE_SIGNATURES[targetPhraseId];
 
-    // Require 2 hands if the sign is two-handed
     if (sig.twoHanded && handsAvailable < 2) {
-      return null; // Don't fire at all — user must show both hands
+      return null;
     }
 
     const score = sig.score(handFeatures);
     if (score >= sig.minScore) {
-      addToBuffer(targetPhraseId);
-      const stable = getStableLabel();
-      if (stable) {
+      const stable = addToBuffer(targetPhraseId);
+      // ONLY return the targeted label if it is the ONE in the stable buffer
+      if (stable === targetPhraseId) {
         return { label: targetPhraseId, confidence: Math.min(0.97, score) };
       }
     } else {
-      // Low score — reset buffer so we don't carry stale frames
+      // Clear buffer if target lost
       phraseBuffer = [];
     }
     return null;
@@ -1416,15 +1124,15 @@ export function classifyISLPhrase(
 
   // Must exceed its own minScore AND beat runner-up by a healthy margin
   if (best.score < best.minScore) return null;
-  if (runner && runner.score >= best.minScore && best.score - runner.score < 0.08) {
-    // Too ambiguous — require higher margin
+  
+  // Ambiguity check: if top 2 are too close, it's uncertain
+  if (runner && runner.score >= best.minScore && best.score - runner.score < 0.12) {
     return null;
   }
 
-  addToBuffer(best.label);
-  const stable = getStableLabel();
+  const stable = addToBuffer(best.label);
   if (stable && stable === best.label) {
-    return { label: best.label, confidence: Math.min(0.95, best.score) };
+    return { label: best.label, confidence: Math.min(0.98, best.score) };
   }
 
   return null;

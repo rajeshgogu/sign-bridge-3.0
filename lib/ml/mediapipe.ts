@@ -27,10 +27,10 @@ export async function initializeHandLandmarker(): Promise<HandLandmarker> {
 
 export function detectHands(
   landmarker: HandLandmarker,
-  video: HTMLVideoElement,
+  input: HTMLVideoElement | ImageBitmap,
   timestamp: number
 ) {
-  return landmarker.detectForVideo(video, timestamp);
+  return landmarker.detectForVideo(input, timestamp);
 }
 
 export function disposeHandLandmarker() {

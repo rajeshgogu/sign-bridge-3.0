@@ -1,7 +1,7 @@
 import type { HandLandmark } from "@/types/ml";
 
 export function normalizeLandmarks(landmarks: HandLandmark[]): number[] {
-  if (landmarks.length === 0) return [];
+  if (landmarks.length === 0) return new Array(63).fill(0); // 21 pts * 3 dims
 
   // Translate to wrist origin
   const wrist = landmarks[0];
@@ -11,7 +11,7 @@ export function normalizeLandmarks(landmarks: HandLandmark[]): number[] {
     z: l.z - wrist.z,
   }));
 
-  // Scale to unit bounding box
+  // Scale to unit bounding box (max distance from wrist)
   let maxDist = 0;
   for (const l of translated) {
     const dist = Math.sqrt(l.x * l.x + l.y * l.y + l.z * l.z);
@@ -27,6 +27,17 @@ export function normalizeLandmarks(landmarks: HandLandmark[]): number[] {
   }
 
   return features;
+}
+
+/**
+ * Combines multiple hands (0, 1, or 2) into a unified 126-dimensional vector.
+ * [Hand 1 Landmarks (63), Hand 2 Landmarks (63)]
+ */
+export function getUnifiedHandVector(multiLandmarks: HandLandmark[][]): number[] {
+  const hand1 = multiLandmarks[0] ? normalizeLandmarks(multiLandmarks[0]) : new Array(63).fill(0);
+  const hand2 = multiLandmarks[1] ? normalizeLandmarks(multiLandmarks[1]) : new Array(63).fill(0);
+  
+  return [...hand1, ...hand2];
 }
 
 export function drawHandLandmarks(
